@@ -1,0 +1,38 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------
+   Custom Theme Variables (for your play area app)
+   These override Tailwind defaults automatically
+---------------------------------------------- */
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
+
+  /* Brand Colors */
+  --color-brand: #0EA5E9;          /* sky-500 */
+  --color-brand-light: #38BDF8;    /* sky-400 */
+  --color-brand-dark: #0284C7;     /* sky-600 */
+
+  /* Accent Colors */
+  --color-accent: #FACC15;         /* yellow-400 */
+  --color-accent-light: #FDE047;   /* yellow-300 */
+
+  /* Text Colors */
+  --color-text-dark: #0F172A;      /* slate-900 */
+  --color-text: #475569;           /* slate-600 */
+  --color-text-light: #94A3B8;     /* slate-400 */
+
+  /* Background */
+  --color-bg: #F1F5F9;             /* slate-100 */
+  --color-card: #FFFFFF;
+
+  /* Status Colors */
+  --color-success: #22C55E;        /* green-500 */
+  --color-warning: #FACC15;        /* yellow-400 */
+  --color-danger: #EF4444;         /* red-500 */
+
+  /* UI Tokens */
+  --radius-card: 1rem;             /* 16px rounded-xl */
+  --radius-btn: 0.75rem;           /* rounded-lg */
+  --shadow-card: 0 8px 20px rgba(0,0,0,0.06);
+  --shadow-soft: 0 4px 10px rgba(0,0,0,0.04);
+}

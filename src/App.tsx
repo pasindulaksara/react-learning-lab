@@ -1,0 +1,84 @@
+import "./App.css";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+
+import RegisterParentPage from "./components/registration/RegisterParentPage";
+import StartSessionPage from "./components/sessions/StartSessionPage";
+import DisplayBoardPage from "./components/sessions/DisplayBoardPage";
+import AppLayout from "./components/layout/AppLayout";
+
+import ParentDetailPage from "./pages/parents/ParentDetailPage";
+import ParentsListPage from "./pages/parents/ParentsListPage";
+
+import DashboardPage from "./pages/dashboard/DashboardPage"; // <-- ADD THIS
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+
+        {/* ---- DASHBOARD (HOME) ---- */}
+        <Route
+          path="/dashboard"
+          element={
+            <AppLayout>
+              <DashboardPage />
+            </AppLayout>
+          }
+        />
+
+        {/* ---- Parent List ---- */}
+        <Route
+          path="/parents"
+          element={
+            <AppLayout>
+              <ParentsListPage />
+            </AppLayout>
+          }
+        />
+
+        {/* ---- Parent Detail ---- */}
+        <Route
+          path="/parent/:id"
+          element={
+            <AppLayout>
+              <ParentDetailPage />
+            </AppLayout>
+          }
+        />
+
+        <Route path="/parent-demo" element={<ParentDetailPage />} />
+
+        {/* ---- Registration ---- */}
+        <Route
+          path="/register"
+          element={
+            <AppLayout>
+              <RegisterParentPage />
+            </AppLayout>
+          }
+        />
+
+        {/* ---- Start Session ---- */}
+        <Route
+          path="/start-session"
+          element={
+            <AppLayout>
+              <StartSessionPage />
+            </AppLayout>
+          }
+        />
+
+        {/* ---- Display Screen (NO layout header) ---- */}
+        <Route path="/display" element={<DisplayBoardPage />} />
+
+        {/* ---- DEFAULT ROUTE: redirect to dashboard ---- */}
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+
+        {/* ---- CATCH-ALL ---- */}
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+export default App;
