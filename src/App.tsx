@@ -10,6 +10,10 @@ import ParentDetailPage from "./pages/parents/ParentDetailPage";
 import ParentsListPage from "./pages/parents/ParentsListPage";
 
 import DashboardPage from "./pages/dashboard/DashboardPage"; // <-- ADD THIS
+import SessionsListPage from "./pages/sessions/SessionsListPage";
+import SessionDetailPage from "./pages/sessions/SessionDetailPage";
+import EarningsPage from "./pages/earnings/EarningsPage";
+import SettingsPage from "./pages/Settings/SettingsPage";
 
 function App() {
   return (
@@ -67,6 +71,43 @@ function App() {
             </AppLayout>
           }
         />
+       <Route
+  path="/sessions"
+  element={
+    <AppLayout>
+      <SessionsListPage />
+    </AppLayout>
+  }
+/>
+
+<Route
+  path="/sessions/:id"
+  element={
+    <AppLayout>
+      <SessionDetailPage />
+    </AppLayout>
+  }
+/>
+
+<Route
+  path="/earnings"
+  element={
+    <AppLayout>
+      <EarningsPage />
+    </AppLayout>
+  }
+/>
+
+<Route
+  path="/settings"
+  element={
+    <AppLayout>
+      <SettingsPage />
+    </AppLayout>
+  }
+/>
+
+
 
         {/* ---- Display Screen (NO layout header) ---- */}
         <Route path="/display" element={<DisplayBoardPage />} />
