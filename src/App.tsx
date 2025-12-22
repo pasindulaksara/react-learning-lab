@@ -1,9 +1,9 @@
 import "./App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
-import RegisterParentPage from "./components/registration/RegisterParentPage";
-import StartSessionPage from "./components/sessions/StartSessionPage";
-import DisplayBoardPage from "./components/sessions/DisplayBoardPage";
+import RegisterParentPage from "./pages/registration/RegisterParentPage";
+import StartSessionPage from "./pages/sessions/StartSessionPage";
+import DisplayBoardPage from "./pages/sessions/DisplayBoardPage";
 import AppLayout from "./components/layout/AppLayout";
 
 import ParentDetailPage from "./pages/parents/ParentDetailPage";
@@ -19,7 +19,6 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-
         {/* ---- DASHBOARD (HOME) ---- */}
         <Route
           path="/dashboard"
@@ -71,43 +70,41 @@ function App() {
             </AppLayout>
           }
         />
-       <Route
-  path="/sessions"
-  element={
-    <AppLayout>
-      <SessionsListPage />
-    </AppLayout>
-  }
-/>
+        <Route
+          path="/sessions"
+          element={
+            <AppLayout>
+              <SessionsListPage />
+            </AppLayout>
+          }
+        />
 
-<Route
-  path="/sessions/:id"
-  element={
-    <AppLayout>
-      <SessionDetailPage />
-    </AppLayout>
-  }
-/>
+        <Route
+          path="/sessions/:id"
+          element={
+            <AppLayout>
+              <SessionDetailPage />
+            </AppLayout>
+          }
+        />
 
-<Route
-  path="/earnings"
-  element={
-    <AppLayout>
-      <EarningsPage />
-    </AppLayout>
-  }
-/>
+        <Route
+          path="/earnings"
+          element={
+            <AppLayout>
+              <EarningsPage />
+            </AppLayout>
+          }
+        />
 
-<Route
-  path="/settings"
-  element={
-    <AppLayout>
-      <SettingsPage />
-    </AppLayout>
-  }
-/>
-
-
+        <Route
+          path="/settings"
+          element={
+            <AppLayout>
+              <SettingsPage />
+            </AppLayout>
+          }
+        />
 
         {/* ---- Display Screen (NO layout header) ---- */}
         <Route path="/display" element={<DisplayBoardPage />} />

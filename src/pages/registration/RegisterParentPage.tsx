@@ -1,4 +1,6 @@
-import { useState } from "react";
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { createParent } from "../../api/parents";
 
 type Child = {
   id: number;
@@ -9,11 +11,14 @@ type Child = {
 const MAX_CHILDREN = 6;
 
 export default function RegisterParentPage() {
+  const navigate = useNavigate();
+
   const [parentName, setParentName] = useState("");
   const [phone, setPhone] = useState("");
-  const [children, setChildren] = useState<Child[]>([
-    { id: 1, name: "", age: "" },
-  ]);
+  const [children, setChildren] = useState<Child[]>([{ id: 1, name: "", age: "" }]);
+
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string>("");
 
   const handleAddChild = () => {
     if (children.length >= MAX_CHILDREN) return;
@@ -27,31 +32,48 @@ export default function RegisterParentPage() {
     setChildren(updated.length ? updated : [{ id: 1, name: "", age: "" }]);
   };
 
-  const handleChildChange = (
-    id: number,
-    field: "name" | "age",
-    value: string
-  ) => {
+  const handleChildChange = (id: number, field: "name" | "age", value: string) => {
     setChildren((prev) =>
-      prev.map((child) =>
-        child.id === id ? { ...child, [field]: value } : child
-      )
+      prev.map((child) => (child.id === id ? { ...child, [field]: value } : child))
     );
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError("");
 
     const payload = {
-      parentName,
-      phone,
-      children: children.filter(
-        (c) => c.name.trim().length > 0 || c.age.trim().length > 0
-      ),
+      name: parentName.trim(),
+      phone: phone.trim(),
+      children: children
+        .filter((c) => c.name.trim().length > 0) // require child name
+        .map((c) => ({
+          name: c.name.trim(),
+          age: c.age ? Number(c.age) : undefined,
+        })),
     };
 
-    console.log("Registration payload:", payload);
-    alert("Submitted (mock). Check console for data.");
+    // frontend validation (quick + clear)
+    if (!payload.name) return setError("Parent name is required");
+    if (!payload.phone) return setError("WhatsApp number is required");
+    if (payload.children.length === 0) return setError("Add at least one child");
+
+    try {
+      setSubmitting(true);
+      await createParent(payload);
+
+      // redirect to parents list after success
+      navigate("/parents");
+    } catch (err: any) {
+      // backend returns { error: "..." }
+      const msg =
+        err?.response?.data?.error ||
+        err?.message ||
+        "Failed to save registration";
+      setError(msg);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const canAddMoreChildren = children.length < MAX_CHILDREN;
@@ -69,6 +91,13 @@ export default function RegisterParentPage() {
         </header>
 
         <form onSubmit={handleSubmit} className="space-y-8">
+          {/* Error */}
+          {error && (
+            <div className="rounded-lg bg-rose-50 border border-rose-200 px-4 py-2 text-sm text-rose-700">
+              {error}
+            </div>
+          )}
+
           {/* Parent details */}
           <section>
             <h2 className="text-lg font-semibold text-slate-800 mb-4">
@@ -126,10 +155,10 @@ export default function RegisterParentPage() {
               <button
                 type="button"
                 onClick={handleAddChild}
-                disabled={!canAddMoreChildren}
+                disabled={!canAddMoreChildren || submitting}
                 className={`inline-flex items-center rounded-lg border px-3 py-1.5 text-xs sm:text-sm font-medium transition
                   ${
-                    canAddMoreChildren
+                    canAddMoreChildren && !submitting
                       ? "border-sky-500 text-sky-600 hover:bg-sky-50"
                       : "border-slate-300 text-slate-400 cursor-not-allowed"
                   }`}
@@ -156,6 +185,7 @@ export default function RegisterParentPage() {
                       }
                       className="block w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
                       placeholder="e.g. Kavindu"
+                      disabled={submitting}
                     />
                   </div>
 
@@ -173,6 +203,7 @@ export default function RegisterParentPage() {
                       }
                       className="block w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
                       placeholder="e.g. 6"
+                      disabled={submitting}
                     />
                   </div>
 
@@ -180,7 +211,8 @@ export default function RegisterParentPage() {
                     <button
                       type="button"
                       onClick={() => handleRemoveChild(child.id)}
-                      className="mt-4 sm:mt-0 inline-flex items-center rounded-lg border border-rose-300 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 transition"
+                      disabled={submitting}
+                      className="mt-4 sm:mt-0 inline-flex items-center rounded-lg border border-rose-300 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 transition disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                       Remove
                     </button>
@@ -199,9 +231,15 @@ export default function RegisterParentPage() {
           <div className="border-t pt-4 flex justify-end">
             <button
               type="submit"
-              className="inline-flex items-center rounded-lg bg-sky-500 px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-sky-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500"
+              disabled={submitting}
+              className={`inline-flex items-center rounded-lg px-5 py-2.5 text-sm font-medium text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2
+                ${
+                  submitting
+                    ? "bg-slate-400 cursor-not-allowed"
+                    : "bg-sky-500 hover:bg-sky-600 focus:ring-sky-500"
+                }`}
             >
-              Save registration
+              {submitting ? "Saving..." : "Save registration"}
             </button>
           </div>
         </form>
