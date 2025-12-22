@@ -1,25 +1,22 @@
+// src/api/sessions.ts
 import { http } from "./http";
 
 export type SessionStatus = "active" | "completed";
 
-export type StartSessionPayload = {
-  parentId: number;
-  childIds: number[];
-  startTime?: string;
-};
-
 export type SessionRow = {
-  id: string | number;
-  parent_id: string | number;
-  parent_name: string;
-  parent_phone: string;
+  id: number;
+  parent_id: number;
+
+  // if your backend list query returns these:
+  parent_name?: string;
+  parent_phone?: string;
+
   status: SessionStatus;
-  start_time: string;
+  start_time: string; // "YYYY-MM-DD HH:mm:ss"
   planned_end_time: string | null;
   end_time: string | null;
-  children_count: string | number;
+  children_count: number;
 
-  // ✅ add these (coming from backend now)
   duration_minutes: number | null;
   payment_method: "cash" | "bank_transfer" | null;
   normal_price: number;
@@ -27,33 +24,51 @@ export type SessionRow = {
   final_price: number;
 };
 
+export type StartSessionPayload = {
+  parent_id: number;
+  child_ids: number[];
+  planned_minutes?: number; // default 120
+};
+
 export async function startSession(payload: StartSessionPayload) {
   const res = await http.post("/sessions/start", payload);
   return res.data.data as {
     id: number;
     parent_id: number;
-    status: string;
     start_time: string;
     planned_end_time: string;
+    status: SessionStatus;
     child_ids: number[];
   };
 }
 
 export async function getSessions(params?: { status?: string; range?: string }) {
-  const res = await http.get("/sessions", { params });
+  const clean: Record<string, string> = {};
+
+  // backend supports only active/completed
+  if (params?.status && params.status !== "all") {
+    clean.status = params.status;
+  }
+
+  // backend does NOT support range yet — don't send it
+  const res = await http.get("/sessions", { params: clean });
   return res.data.data as SessionRow[];
 }
 
-// ✅ NEW: session detail
+
 export async function getSessionById(sessionId: number) {
-  const res = await http.get(`/sessions/${sessionId}`);
-  return res.data.data as SessionRow;
+  const res = await http.get("/sessions"); // existing endpoint
+  const rows = res.data.data as SessionRow[];
+  const found = rows.find((s) => Number(s.id) === Number(sessionId));
+  if (!found) throw new Error("Session not found");
+  return found;
 }
+
 
 export async function endSession(
   sessionId: number,
-  payload?: { endTime?: string; paymentMethod: "cash" | "bank_transfer"; applyDiscount?: boolean }
+  payload: { payment_method: "cash" | "bank_transfer" }
 ) {
-  const res = await http.post(`/sessions/${sessionId}/end`, payload || {});
-  return res.data;
+  const res = await http.post(`/sessions/${sessionId}/end`, payload);
+  return res.data as { ok: boolean; data: SessionRow };
 }
