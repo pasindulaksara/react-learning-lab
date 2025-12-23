@@ -7,7 +7,6 @@ export type SessionRow = {
   id: number;
   parent_id: number;
 
-  // if your backend list query returns these:
   parent_name?: string;
   parent_phone?: string;
 
@@ -28,6 +27,7 @@ export type StartSessionPayload = {
   parent_id: number;
   child_ids: number[];
   planned_minutes?: number; // default 120
+  start_time?: string; // ✅ send "YYYY-MM-DD HH:mm:ss" to avoid timezone shift
 };
 
 export async function startSession(payload: StartSessionPayload) {
@@ -45,25 +45,21 @@ export async function startSession(payload: StartSessionPayload) {
 export async function getSessions(params?: { status?: string; range?: string }) {
   const clean: Record<string, string> = {};
 
-  // backend supports only active/completed
   if (params?.status && params.status !== "all") {
     clean.status = params.status;
   }
 
-  // backend does NOT support range yet — don't send it
   const res = await http.get("/sessions", { params: clean });
   return res.data.data as SessionRow[];
 }
 
-
 export async function getSessionById(sessionId: number) {
-  const res = await http.get("/sessions"); // existing endpoint
+  const res = await http.get("/sessions");
   const rows = res.data.data as SessionRow[];
   const found = rows.find((s) => Number(s.id) === Number(sessionId));
   if (!found) throw new Error("Session not found");
   return found;
 }
-
 
 export async function endSession(
   sessionId: number,

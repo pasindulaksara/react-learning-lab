@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { endSession, getSessionById, type SessionRow, type SessionStatus } from "../../api/sessions";
+import {
+  endSession,
+  getSessionById,
+  type SessionRow,
+  type SessionStatus,
+} from "../../api/sessions";
+import { getParentById } from "../../api/parentDetail";
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
@@ -30,7 +36,11 @@ function StatusBadge({ status }: { status: SessionStatus }) {
     status === "active"
       ? "bg-green-100 text-green-700"
       : "bg-gray-100 text-gray-700";
-  return <span className={`px-2 py-1 rounded text-xs capitalize ${cls}`}>{status}</span>;
+  return (
+    <span className={`px-2 py-1 rounded text-xs capitalize ${cls}`}>
+      {status}
+    </span>
+  );
 }
 
 export default function SessionDetailPage() {
@@ -42,7 +52,14 @@ export default function SessionDetailPage() {
   const [ending, setEnding] = useState(false);
   const [error, setError] = useState("");
 
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "bank_transfer">("cash");
+  const [paymentMethod, setPaymentMethod] = useState<
+    "cash" | "bank_transfer"
+  >("cash");
+
+  // ✅ real parent info
+  const [parentInfo, setParentInfo] = useState<{ name: string; phone: string } | null>(
+    null
+  );
 
   useEffect(() => {
     let alive = true;
@@ -58,12 +75,23 @@ export default function SessionDetailPage() {
     setError("");
 
     getSessionById(sid)
-      .then((row) => {
+      .then(async (row) => {
         if (!alive) return;
+
         setSession(row);
 
         if (row.payment_method === "bank_transfer") setPaymentMethod("bank_transfer");
         if (row.payment_method === "cash") setPaymentMethod("cash");
+
+        // ✅ fetch parent name/phone from /parents/:id
+        try {
+          const p = await getParentById(row.parent_id);
+          if (!alive) return;
+          setParentInfo({ name: p.name, phone: p.phone });
+        } catch {
+          if (!alive) return;
+          setParentInfo(null);
+        }
       })
       .catch((e: any) => {
         if (!alive) return;
@@ -83,7 +111,10 @@ export default function SessionDetailPage() {
   // re-render timer for active sessions so duration updates
   useEffect(() => {
     if (!session || session.status !== "active") return;
-    const t = window.setInterval(() => setSession((prev) => (prev ? { ...prev } : prev)), 10000);
+    const t = window.setInterval(
+      () => setSession((prev) => (prev ? { ...prev } : prev)),
+      10000
+    );
     return () => window.clearInterval(t);
   }, [session]);
 
@@ -106,15 +137,15 @@ export default function SessionDetailPage() {
   const handleEndSession = async () => {
     if (!session) return;
     if (session.status !== "active") return;
-  
+
     setEnding(true);
     setError("");
-  
+
     try {
       const res = await endSession(Number(session.id), {
         payment_method: paymentMethod,
       });
-  
+
       if (res?.data) setSession(res.data);
       navigate("/sessions");
     } catch (e: any) {
@@ -123,12 +154,13 @@ export default function SessionDetailPage() {
       setEnding(false);
     }
   };
-  
 
   if (loading) {
     return (
       <div className="p-6">
-        <div className="bg-white rounded-lg shadow p-6 text-gray-500">Loading session…</div>
+        <div className="bg-white rounded-lg shadow p-6 text-gray-500">
+          Loading session…
+        </div>
       </div>
     );
   }
@@ -138,7 +170,9 @@ export default function SessionDetailPage() {
       <div className="p-6">
         <div className="bg-white rounded-lg shadow p-6">
           <h1 className="text-xl font-semibold mb-2">Session not found</h1>
-          <p className="text-sm text-gray-500 mb-4">The session you are looking for does not exist.</p>
+          <p className="text-sm text-gray-500 mb-4">
+            The session you are looking for does not exist.
+          </p>
           <Link to="/sessions" className="text-blue-600 hover:underline">
             Back to Sessions
           </Link>
@@ -154,6 +188,12 @@ export default function SessionDetailPage() {
       ? "Bank transfer"
       : "Pending";
 
+  const displayParentName =
+    parentInfo?.name ?? session.parent_name ?? `Parent #${session.parent_id}`;
+
+  const displayParentPhone =
+    parentInfo?.phone ?? session.parent_phone ?? "-";
+
   return (
     <div className="p-6">
       {error && (
@@ -168,11 +208,16 @@ export default function SessionDetailPage() {
             <h1 className="text-2xl font-semibold">Session Details</h1>
             <StatusBadge status={session.status} />
           </div>
-          <p className="text-sm text-gray-500">End session and record payment method.</p>
+          <p className="text-sm text-gray-500">
+            End session and record payment method.
+          </p>
         </div>
 
         <div className="flex gap-2">
-          <Link to="/sessions" className="px-4 py-2 rounded border bg-white hover:bg-gray-50 text-sm">
+          <Link
+            to="/sessions"
+            className="px-4 py-2 rounded border bg-white hover:bg-gray-50 text-sm"
+          >
             Back
           </Link>
 
@@ -189,29 +234,36 @@ export default function SessionDetailPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-lg shadow p-4">
           <p className="text-sm text-gray-500">Parent</p>
-          <p className="text-lg font-semibold">{session.parent_name ?? `Parent #${session.parent_id}`}</p>
-          <p className="text-sm text-gray-500">WhatsApp: {session.parent_phone ?? "-"}</p>
+          <p className="text-lg font-semibold">{displayParentName}</p>
+          <p className="text-sm text-gray-500">WhatsApp: {displayParentPhone}</p>
           <p className="text-sm text-gray-500">
-            {Number(session.children_count)} child{Number(session.children_count) > 1 ? "ren" : ""}
+            {Number(session.children_count)} child
+            {Number(session.children_count) > 1 ? "ren" : ""}
           </p>
         </div>
 
         <div className="bg-white rounded-lg shadow p-4">
           <p className="text-sm text-gray-500">Time</p>
           <p className="text-lg font-semibold">
-            {derived.start} <span className="text-gray-400 font-normal">→</span> {derived.end}
+            {derived.start}{" "}
+            <span className="text-gray-400 font-normal">→</span> {derived.end}
           </p>
           <p className="text-sm text-gray-500">Duration: {derived.duration}</p>
           <p className="text-xs text-gray-400 mt-1">
-            Planned end: {session.planned_end_time ? formatHM(session.planned_end_time) : "-"}
+            Planned end:{" "}
+            {session.planned_end_time ? formatHM(session.planned_end_time) : "-"}
           </p>
         </div>
 
         <div className="bg-white rounded-lg shadow p-4">
           <p className="text-sm text-gray-500">Payment</p>
-          <p className="text-lg font-semibold">Rs. {Number(session.final_price).toLocaleString("en-LK")}</p>
+          <p className="text-lg font-semibold">
+            Rs. {Number(session.final_price).toLocaleString("en-LK")}
+          </p>
           <p className="text-sm text-gray-500">Method: {paymentLabel}</p>
-          <p className="text-xs text-gray-400 mt-1">Duration saved: {session.duration_minutes ?? "-"}</p>
+          <p className="text-xs text-gray-400 mt-1">
+            Duration saved: {session.duration_minutes ?? "-"}
+          </p>
         </div>
       </div>
 
@@ -225,7 +277,9 @@ export default function SessionDetailPage() {
               <select
                 className="border rounded px-3 py-2 text-sm"
                 value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value as "cash" | "bank_transfer")}
+                onChange={(e) =>
+                  setPaymentMethod(e.target.value as "cash" | "bank_transfer")
+                }
                 disabled={session.status !== "active"}
               >
                 <option value="cash">Cash</option>

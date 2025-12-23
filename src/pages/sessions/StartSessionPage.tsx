@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { startSession } from "../../api/sessions";
 import { getParents, type ParentRow } from "../../api/parents";
 import { getParentById, type ParentDetail } from "../../api/parentDetail";
@@ -21,26 +21,38 @@ const SHOP_OPEN_HOUR = 8; // 8 AM
 const SHOP_CLOSE_HOUR = 20; // 8 PM
 const DEFAULT_DURATION_HOURS = 2;
 
+function formatDuration(mins: number) {
+  const safe = Number.isFinite(mins) ? mins : 0;
+  const h = Math.floor(safe / 60);
+  const m = safe % 60;
+  if (h <= 0) return `${m} min`;
+  if (m === 0) return `${h} h`;
+  return `${h} h ${m} min`;
+}
+
 export default function StartSessionPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // Deep-link support: /start-session?parent=5&child=7
+  const parentFromUrl = searchParams.get("parent");
+  const childFromUrl = searchParams.get("child");
 
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<ParentRow[]>([]);
   const [searching, setSearching] = useState(false);
 
-  const [selectedParent, setSelectedParent] = useState<ParentPicked | null>(
-    null
-  );
+  const [selectedParent, setSelectedParent] = useState<ParentPicked | null>(null);
   const [selectedChildIds, setSelectedChildIds] = useState<number[]>([]);
 
   const [loadingParent, setLoadingParent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>("");
 
-  const now = useMemo(() => new Date(), []);
-  const [startTime] = useState<Date>(now);
+  // IMPORTANT: do NOT memoize "now" once. Use real time when page loads.
+  const [startTime] = useState<Date>(() => new Date());
 
-  // UI-only: planned end time (2h but not after 8 PM)
+  // planned end time (2h but not after 8 PM)
   const { plannedEnd, effectiveMinutes } = useMemo(() => {
     const start = startTime;
 
@@ -59,45 +71,6 @@ export default function StartSessionPage() {
 
   const formatTime = (d: Date) =>
     d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-  // Live search (debounced)
-  useEffect(() => {
-    let alive = true;
-    const q = query.trim();
-
-    // reset selection when user types new query
-    setSelectedParent(null);
-    setSelectedChildIds([]);
-    setError("");
-
-    if (!q) {
-      setSuggestions([]);
-      return;
-    }
-
-    setSearching(true);
-
-    const t = window.setTimeout(() => {
-      getParents(q)
-        .then((rows) => {
-          if (!alive) return;
-          setSuggestions(rows);
-        })
-        .catch(() => {
-          if (!alive) return;
-          setSuggestions([]);
-        })
-        .finally(() => {
-          if (!alive) return;
-          setSearching(false);
-        });
-    }, 250);
-
-    return () => {
-      alive = false;
-      window.clearTimeout(t);
-    };
-  }, [query]);
 
   const toggleChild = (id: number) => {
     setSelectedChildIds((prev) =>
@@ -136,6 +109,101 @@ export default function StartSessionPage() {
     }
   };
 
+  // Live search (debounced)
+  useEffect(() => {
+    let alive = true;
+    const q = query.trim();
+
+    // Only reset when user is manually searching (not deep-linked)
+    if (!parentFromUrl) {
+      setSelectedParent(null);
+      setSelectedChildIds([]);
+    }
+
+    setError("");
+
+    if (!q) {
+      setSuggestions([]);
+      return;
+    }
+
+    setSearching(true);
+
+    const t = window.setTimeout(() => {
+      getParents(q)
+        .then((rows) => {
+          if (!alive) return;
+          setSuggestions(Array.isArray(rows) ? rows : []);
+        })
+        .catch(() => {
+          if (!alive) return;
+          setSuggestions([]);
+        })
+        .finally(() => {
+          if (!alive) return;
+          setSearching(false);
+        });
+    }, 250);
+
+    return () => {
+      alive = false;
+      window.clearTimeout(t);
+    };
+  }, [query, parentFromUrl]);
+
+  // Auto-load parent + child from URL (when coming from Parent Detail "Start session")
+  useEffect(() => {
+    let alive = true;
+
+    async function loadFromUrl() {
+      if (!parentFromUrl) return;
+
+      try {
+        setLoadingParent(true);
+        setError("");
+
+        const detail = await getParentById(parentFromUrl);
+        if (!alive) return;
+
+        const children: Child[] = (detail.children || []).map((c) => ({
+          id: Number(c.id),
+          name: c.name,
+          age: Number(c.age || 0),
+        }));
+
+        const picked: ParentPicked = {
+          id: Number(detail.id),
+          name: detail.name,
+          phone: detail.phone,
+          children,
+        };
+
+        setSelectedParent(picked);
+
+        if (childFromUrl) {
+          setSelectedChildIds([Number(childFromUrl)]);
+        } else {
+          setSelectedChildIds(children.map((c) => c.id));
+        }
+
+        setQuery(detail.name);
+        setSuggestions([]);
+      } catch (e: any) {
+        setSelectedParent(null);
+        setSelectedChildIds([]);
+        setError(e?.response?.data?.error || "Failed to load parent from link");
+      } finally {
+        setLoadingParent(false);
+      }
+    }
+
+    loadFromUrl();
+
+    return () => {
+      alive = false;
+    };
+  }, [parentFromUrl, childFromUrl]);
+
   const handleStartSession = async () => {
     setError("");
 
@@ -151,10 +219,11 @@ export default function StartSessionPage() {
     try {
       setSubmitting(true);
 
+      // Backend expects: parent_id, child_ids, planned_minutes
       await startSession({
-        parentId: selectedParent.id,
-        childIds: selectedChildIds,
-        startTime: new Date().toISOString(),
+        parent_id: Number(selectedParent.id),
+        child_ids: selectedChildIds.map(Number),
+        planned_minutes: effectiveMinutes > 0 ? effectiveMinutes : 120,
       });
 
       navigate("/sessions");
@@ -171,21 +240,20 @@ export default function StartSessionPage() {
   return (
     <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4 font-sans">
       <div className="w-full max-w-4xl bg-white shadow-xl rounded-2xl p-6 sm:p-8">
-        {/* Header */}
         <header className="mb-6 border-b pb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900">
               Start play session
             </h1>
             <p className="mt-1 text-sm text-slate-500">
-              Search parent, select children and start the 2-hour timer.
+              Search parent, select children and start the timer.
             </p>
           </div>
 
           <div className="text-xs text-right text-slate-500">
             <div>
-              Shop hours: {SHOP_OPEN_HOUR.toString().padStart(2, "0")}:00 –{" "}
-              {SHOP_CLOSE_HOUR.toString().padStart(2, "0")}:00
+              Shop hours: {String(SHOP_OPEN_HOUR).padStart(2, "0")}:00 –{" "}
+              {String(SHOP_CLOSE_HOUR).padStart(2, "0")}:00
             </div>
             <div>
               Now:{" "}
@@ -196,14 +264,12 @@ export default function StartSessionPage() {
           </div>
         </header>
 
-        {/* Error */}
         {error && (
           <div className="mb-4 rounded-lg bg-rose-50 border border-rose-200 px-4 py-2 text-sm text-rose-700">
             {error}
           </div>
         )}
 
-        {/* Search */}
         <section className="mb-6">
           <label className="block text-sm font-medium text-slate-700 mb-1">
             Search parent (name or WhatsApp number)
@@ -215,9 +281,10 @@ export default function StartSessionPage() {
             onChange={(e) => setQuery(e.target.value)}
             className="block w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
             placeholder="e.g. Lakshika or 0771234567"
+            disabled={!!parentFromUrl}
           />
 
-          {query.trim() && (
+          {query.trim() && !parentFromUrl && (
             <div className="mt-3 border rounded-xl border-slate-200 bg-slate-50 max-h-48 overflow-y-auto text-sm">
               {searching && (
                 <div className="px-3 py-2 text-slate-500">Searching…</div>
@@ -225,7 +292,7 @@ export default function StartSessionPage() {
 
               {!searching && suggestions.length === 0 && (
                 <div className="px-3 py-2 text-slate-500">
-                  No matching parents. Use registration page first.
+                  No matching parents. Use registration first.
                 </div>
               )}
 
@@ -252,10 +319,8 @@ export default function StartSessionPage() {
           <div className="mb-4 text-sm text-slate-500">Loading parent…</div>
         )}
 
-        {/* Selected parent */}
         {selectedParent && (
           <section className="space-y-6">
-            {/* Parent summary */}
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div>
                 <div className="text-xs text-slate-500">Selected parent</div>
@@ -271,7 +336,6 @@ export default function StartSessionPage() {
               </div>
             </div>
 
-            {/* Children selection */}
             <div>
               <h2 className="text-sm font-semibold text-slate-800 mb-2">
                 Select children for this session
@@ -279,8 +343,7 @@ export default function StartSessionPage() {
 
               {selectedParent.children.length === 0 ? (
                 <div className="text-sm text-slate-500">
-                  No children found for this parent. Please add children in
-                  registration.
+                  No children found for this parent.
                 </div>
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -316,12 +379,10 @@ export default function StartSessionPage() {
               )}
 
               <p className="mt-2 text-xs text-slate-500">
-                Discount is always per parent, not per child. Even with 2+ kids,
-                only one Rs. 1000 / 1 hour free offer applies.
+                Discount is per parent (not per child). Max Rs. 1000 per visit.
               </p>
             </div>
 
-            {/* Session time summary */}
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-slate-800">
@@ -329,8 +390,7 @@ export default function StartSessionPage() {
                 </div>
                 <div className="text-xs text-slate-600">
                   Standard: {DEFAULT_DURATION_HOURS} hours · Closes at 8:00 PM.
-                  If started close to closing time, end time is capped at 8:00
-                  PM.
+                  End time is capped at 8:00 PM.
                 </div>
               </div>
 
@@ -350,14 +410,12 @@ export default function StartSessionPage() {
                 <div>
                   <span className="text-xs text-slate-500">Duration</span>
                   <div className="font-medium text-slate-900">
-                    {durationHours} h
-                    {durationRemainder !== 0 && ` ${durationRemainder} min`}
+                    {durationHours} h{durationRemainder !== 0 ? ` ${durationRemainder} min` : ""}
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Start button */}
             <div className="border-t pt-4 flex justify-end">
               <button
                 type="button"
@@ -377,6 +435,12 @@ export default function StartSessionPage() {
               >
                 {submitting ? "Starting..." : "Start session"}
               </button>
+            </div>
+
+            {/* (Optional) debug line */}
+            <div className="text-xs text-slate-400">
+              Payload uses parent_id + child_ids + planned_minutes. Backend sets start_time.
+              Planned minutes: {formatDuration(effectiveMinutes || 120)}
             </div>
           </section>
         )}

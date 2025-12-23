@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getParentById, type ParentDetail } from "../../api/parentDetail";
 
 function formatDuration(mins: number) {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
+  const safe = Number.isFinite(mins) ? mins : 0;
+  const h = Math.floor(safe / 60);
+  const m = safe % 60;
   if (h <= 0) return `${m} min`;
   if (m === 0) return `${h} h`;
   return `${h} h ${m} min`;
@@ -49,28 +50,28 @@ export default function ParentDetailPage() {
     };
   }, [id]);
 
-  // Placeholder metrics until sessions API is implemented
-  const metrics = useMemo(() => {
-    return {
-      totalMinutesPlayed: 0,
-      totalSessions: 0,
-      rewardsEarned: 0,
-      rewardsAvailable: 0,
-      rewardsUsed: 0,
-      upcomingRewardInMinutes: 8 * 60, // “next reward at 8h”
-      recentSessions: [] as Array<{
-        id: number;
-        date: string;
-        startTime: string;
-        endTime: string;
-        durationMinutes: number;
-        numChildren: number;
-        normalPrice: number;
-        discountAmount: number;
-        finalPrice: number;
-      }>,
-    };
-  }, []);
+  // ✅ Derived values computed WITHOUT hooks (no useMemo => no hook-order issues)
+  const children = Array.isArray(parent?.children) ? parent!.children : [];
+  const recentSessions = Array.isArray(parent?.recent_sessions)
+    ? parent!.recent_sessions
+    : [];
+
+  const firstName = parent?.name ? parent.name.split(" ")[0] || parent.name : "";
+
+  const totalMinutesPlayed = parent?.total_minutes_played ?? 0;
+  const totalSessions = parent?.total_sessions ?? 0;
+
+  const rewardsEarned = parent?.rewards_earned ?? 0;
+  const rewardsAvailable = parent?.rewards_available ?? 0;
+  const rewardsUsed = parent?.rewards_used ?? 0;
+
+  const upcomingRewardInMinutes = parent?.upcoming_reward_in_minutes ?? 0;
+
+  const totalHoursPlayed = formatDuration(totalMinutesPlayed);
+  const nextRewardText =
+    upcomingRewardInMinutes > 0
+      ? formatDuration(upcomingRewardInMinutes)
+      : "Reward ready";
 
   if (loading) {
     return (
@@ -98,14 +99,6 @@ export default function ParentDetailPage() {
       </div>
     );
   }
-
-  const firstName = parent.name.split(" ")[0] || parent.name;
-
-  const totalHoursPlayed = formatDuration(metrics.totalMinutesPlayed);
-  const nextRewardText =
-    metrics.upcomingRewardInMinutes > 0
-      ? formatDuration(metrics.upcomingRewardInMinutes)
-      : "Reward ready";
 
   return (
     <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
@@ -145,8 +138,7 @@ export default function ParentDetailPage() {
             {totalHoursPlayed}
           </div>
           <div className="text-xs text-slate-500 mt-1">
-            Across {metrics.totalSessions} session
-            {metrics.totalSessions === 1 ? "" : "s"}.
+            Across {totalSessions} session{totalSessions === 1 ? "" : "s"}.
           </div>
         </div>
 
@@ -156,15 +148,15 @@ export default function ParentDetailPage() {
           </div>
           <div className="flex items-baseline gap-2">
             <span className="text-xl font-semibold text-slate-900">
-              {metrics.rewardsEarned}
+              {rewardsEarned}
             </span>
             <span className="text-xs text-slate-500">earned</span>
           </div>
           <div className="mt-1 text-xs text-slate-500">
             <span className="font-medium text-emerald-600">
-              {metrics.rewardsAvailable} available
+              {rewardsAvailable} available
             </span>{" "}
-            · {metrics.rewardsUsed} used
+            · {rewardsUsed} used
           </div>
         </div>
 
@@ -191,18 +183,17 @@ export default function ParentDetailPage() {
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold text-slate-900">Children</h2>
               <span className="text-xs text-slate-500">
-                {parent.children.length} child
-                {parent.children.length === 1 ? "" : "ren"}
+                {children.length} child{children.length === 1 ? "" : "ren"}
               </span>
             </div>
 
-            {parent.children.length === 0 ? (
+            {children.length === 0 ? (
               <div className="text-sm text-slate-500">No children found.</div>
             ) : (
               <div className="divide-y divide-slate-100">
-                {parent.children.map((child) => (
+                {children.map((child) => (
                   <div
-                    key={child.id}
+                    key={String(child.id)}
                     className="py-2.5 flex items-center justify-between"
                   >
                     <div>
@@ -214,7 +205,6 @@ export default function ParentDetailPage() {
                       </div>
                     </div>
 
-                    {/* Next step: Start Session button */}
                     <Link
                       to={`/start-session?parent=${parent.id}&child=${child.id}`}
                       className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
@@ -227,18 +217,69 @@ export default function ParentDetailPage() {
             )}
           </section>
 
-          {/* Recent sessions (placeholder) */}
+          {/* Recent sessions (CONNECTED) */}
           <section className="bg-white rounded-2xl shadow-md border border-slate-100 p-4 sm:p-5">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold text-slate-900">
                 Recent sessions
               </h2>
-              <span className="text-xs text-slate-500">Showing last 0 sessions</span>
+              <span className="text-xs text-slate-500">
+                Showing last {recentSessions.length} sessions
+              </span>
             </div>
 
-            <div className="text-sm text-slate-500">
-              Sessions will appear here once we connect the sessions API.
-            </div>
+            {recentSessions.length === 0 ? (
+              <div className="text-sm text-slate-500">No sessions yet.</div>
+            ) : (
+              <div className="space-y-3">
+                {recentSessions.map((s) => {
+                  const duration = Number(s.duration_minutes || 0);
+                  const finalPrice = Number(s.final_price || 0);
+                  const discount = Number(s.discount_amount || 0);
+
+                  return (
+                    <div
+                      key={String(s.id)}
+                      className="border border-slate-100 rounded-xl p-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-medium text-slate-900">
+                          Session #{s.id}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {String(s.status).toUpperCase()}
+                        </div>
+                      </div>
+
+                      <div className="mt-1 text-xs text-slate-600">
+                        Duration{" "}
+                        <span className="font-medium">
+                          {formatDuration(duration)}
+                        </span>{" "}
+                        · Children{" "}
+                        <span className="font-medium">{s.children_count}</span>
+                      </div>
+
+                      <div className="mt-1 text-xs text-slate-600">
+                        Final{" "}
+                        <span className="font-medium">Rs. {finalPrice}</span>
+                        {discount > 0 ? (
+                          <span className="text-emerald-700">
+                            {" "}
+                            · Discount Rs. {discount}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-1 text-[11px] text-slate-500">
+                        Start: {s.start_time}
+                        {s.end_time ? ` · End: ${s.end_time}` : ""}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
         </div>
 

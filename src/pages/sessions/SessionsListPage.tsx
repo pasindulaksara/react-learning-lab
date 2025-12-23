@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { getSessions, type SessionRow, type SessionStatus } from "../../api/sessions";
+import { getParentById } from "../../api/parentDetail";
 
 type RangeFilter = "today" | "week" | "all";
 type StatusFilter = "all" | SessionStatus;
@@ -9,15 +10,20 @@ function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
 
-function formatHM(iso: string) {
-  const d = new Date(iso);
+// ✅ handles backend "YYYY-MM-DD HH:mm:ss"
+function toDate(sqlOrIso: string) {
+  return new Date(sqlOrIso.replace(" ", "T"));
+}
+
+function formatHM(sqlOrIso: string) {
+  const d = toDate(sqlOrIso);
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
-function durationTextFromTimes(startIso: string, endIso: string | null) {
-  const start = new Date(startIso).getTime();
-  const end = endIso ? new Date(endIso).getTime() : Date.now();
-  const diffMin = Math.max(Math.floor((end - start) / 60000), 0);
+function durationTextFromTimes(start: string, end: string | null) {
+  const s = toDate(start).getTime();
+  const e = end ? toDate(end).getTime() : Date.now();
+  const diffMin = Math.max(Math.floor((e - s) / 60000), 0);
 
   const h = Math.floor(diffMin / 60);
   const m = diffMin % 60;
@@ -27,6 +33,8 @@ function durationTextFromTimes(startIso: string, endIso: string | null) {
   return `${h}h ${m}m`;
 }
 
+type ParentLite = { id: number; name: string; phone: string };
+
 export default function SessionsListPage() {
   const [rows, setRows] = useState<SessionRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -35,6 +43,10 @@ export default function SessionsListPage() {
   const [status, setStatus] = useState<StatusFilter>("all");
   const [range, setRange] = useState<RangeFilter>("today");
 
+  // ✅ parent map for list page
+  const [parentsMap, setParentsMap] = useState<Record<number, ParentLite>>({});
+  const [loadingParents, setLoadingParents] = useState(false);
+
   // ✅ tick to re-render durations automatically
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -42,6 +54,7 @@ export default function SessionsListPage() {
     return () => window.clearInterval(t);
   }, []);
 
+  // Load sessions
   useEffect(() => {
     let alive = true;
     setLoading(true);
@@ -67,23 +80,82 @@ export default function SessionsListPage() {
     };
   }, [status, range]);
 
+  // ✅ Load parents for visible sessions (so names show)
+  useEffect(() => {
+    let alive = true;
+
+    const ids = Array.from(
+      new Set(rows.map((r) => Number(r.parent_id)).filter((n) => Number.isFinite(n)))
+    );
+
+    // Only fetch those we don't already have
+    const missing = ids.filter((id) => !parentsMap[id]);
+
+    if (missing.length === 0) return;
+
+    setLoadingParents(true);
+
+    (async () => {
+      try {
+        const parents = await Promise.all(
+          missing.map(async (id) => {
+            const p = await getParentById(id);
+            return { id: Number(p.id), name: p.name, phone: p.phone } as ParentLite;
+          })
+        );
+
+        if (!alive) return;
+
+        setParentsMap((prev) => {
+          const next = { ...prev };
+          parents.forEach((p) => {
+            next[p.id] = p;
+          });
+          return next;
+        });
+      } catch {
+        // ignore – UI will fallback to Parent #id
+      } finally {
+        if (alive) setLoadingParents(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+    // Important: include parentsMap in dependency so "missing" is accurate.
+  }, [rows, parentsMap]);
+
   const ui = useMemo(() => {
-    // ✅ tick included so durations refresh without page reload
     void tick;
 
-    return rows.map((s) => ({
-      id: Number(s.id),
-      parentName: s.parent_name,
-      children: Number(s.children_count),
-      start: formatHM(s.start_time),
-      end: s.end_time ? formatHM(s.end_time) : "",
-      duration: durationTextFromTimes(s.start_time, s.end_time),
-      status: s.status,
-    }));
-  }, [rows, tick]);
+    return rows.map((s) => {
+      const pid = Number(s.parent_id);
+      const parentName =
+        parentsMap[pid]?.name ?? s.parent_name ?? `Parent #${s.parent_id}`;
 
-  const activeCount = useMemo(() => ui.filter((x) => x.status === "active").length, [ui]);
-  const completedCount = useMemo(() => ui.filter((x) => x.status === "completed").length, [ui]);
+      return {
+        id: Number(s.id),
+        parentId: pid,
+        parentName,
+        parentPhone: parentsMap[pid]?.phone ?? s.parent_phone ?? "",
+        children: Number(s.children_count),
+        start: formatHM(s.start_time),
+        end: s.end_time ? formatHM(s.end_time) : "",
+        duration: durationTextFromTimes(s.start_time, s.end_time),
+        status: s.status,
+      };
+    });
+  }, [rows, tick, parentsMap]);
+
+  const activeCount = useMemo(
+    () => ui.filter((x) => x.status === "active").length,
+    [ui]
+  );
+  const completedCount = useMemo(
+    () => ui.filter((x) => x.status === "completed").length,
+    [ui]
+  );
   const totalCount = ui.length;
 
   return (
@@ -114,7 +186,7 @@ export default function SessionsListPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-lg p-4 shadow mb-4 flex gap-4">
+      <div className="bg-white rounded-lg p-4 shadow mb-4 flex gap-4 items-center">
         <select
           className="border rounded px-3 py-2 text-sm"
           value={status}
@@ -134,6 +206,10 @@ export default function SessionsListPage() {
           <option value="week">This week</option>
           <option value="all">All time</option>
         </select>
+
+        {loadingParents && (
+          <span className="text-xs text-gray-500">Loading parent names…</span>
+        )}
       </div>
 
       <div className="bg-white rounded-lg shadow overflow-x-auto">
@@ -149,6 +225,7 @@ export default function SessionsListPage() {
               <th className="text-right p-3">Action</th>
             </tr>
           </thead>
+
           <tbody>
             {loading ? (
               <tr>
@@ -165,7 +242,12 @@ export default function SessionsListPage() {
             ) : (
               ui.map((s) => (
                 <tr key={s.id} className="border-b last:border-0">
-                  <td className="p-3 font-medium">{s.parentName}</td>
+                  <td className="p-3">
+                    <div className="font-medium">{s.parentName}</div>
+                    {s.parentPhone && (
+                      <div className="text-xs text-gray-500">WhatsApp: {s.parentPhone}</div>
+                    )}
+                  </td>
                   <td className="p-3">{s.children}</td>
                   <td className="p-3">{s.start}</td>
                   <td className="p-3">{s.end || "-"}</td>
